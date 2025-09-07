@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from datetime import datetime
 import subprocess
 import sys
 import threading
@@ -18,6 +19,7 @@ def process_and_send(input_file, output_file):
         "-map", "a",
         output_file
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("Transcribing")
     with open(output_file, "rb") as audio_file:
         transcript = openai.audio.transcriptions.create( file=audio_file, model="whisper-1")
     text = transcript.text
@@ -28,18 +30,38 @@ def process_and_send(input_file, output_file):
 class SimplePOSTHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
+        print("Reading", content_length)
         post_data = self.rfile.read(content_length)
-        input_file = "processing.mp4"
-        output_file = "output.mp3"
+
+        filename = "data/"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        input_file = filename+".mp4"
+        output_file = filename+".mp3"
+        text_file = filename+".txt"
         with open(input_file, "wb") as f:
             f.write(post_data)
         print(f"Saved POST data to {input_file}")
         text = process_and_send(input_file, output_file)
+        with open(text_file, "w") as f:
+            f.write(text)
         self.send_response(200)
+        self._set_cors_headers()
         self.send_header("Content-type", "text/plain")
         self.end_headers()
-        self.wfile.write(text)
+        self.wfile.write(text.encode('utf-8'))
 
+    def _set_cors_headers(self):
+        """Set CORS headers"""
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        self.send_header('Access-Control-Max-Age', '86400')  # 24 hours
+
+    def do_OPTIONS(self):
+        """Handle preflight OPTIONS requests for CORS"""
+        self.send_response(200)
+        self._set_cors_headers()
+        self.end_headers()
+    
 
 def main():
     with open("openaikey.txt") as f:
